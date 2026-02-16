@@ -4,28 +4,88 @@ const User = require("../models/User");
 const authMiddleware = require("../middleware/authMiddleware");
 
 const router = express.Router();
-// calculateIndiaAQI (use only if wqai fails )
-function calculateIndiaAQI(pm25) {
-  if (pm25 == null || isNaN(pm25)) return null;
 
-  const breakpoints = [
+/* ===========================
+   CPCB BREAKPOINT TABLES
+=========================== */
+
+const AQI_BREAKPOINTS = {
+  pm2_5: [
     { cLow: 0, cHigh: 30, iLow: 0, iHigh: 50 },
     { cLow: 31, cHigh: 60, iLow: 51, iHigh: 100 },
     { cLow: 61, cHigh: 90, iLow: 101, iHigh: 200 },
     { cLow: 91, cHigh: 120, iLow: 201, iHigh: 300 },
     { cLow: 121, cHigh: 250, iLow: 301, iHigh: 400 },
     { cLow: 251, cHigh: 500, iLow: 401, iHigh: 500 },
-  ];
+  ],
+  pm10: [
+    { cLow: 0, cHigh: 50, iLow: 0, iHigh: 50 },
+    { cLow: 51, cHigh: 100, iLow: 51, iHigh: 100 },
+    { cLow: 101, cHigh: 250, iLow: 101, iHigh: 200 },
+    { cLow: 251, cHigh: 350, iLow: 201, iHigh: 300 },
+    { cLow: 351, cHigh: 430, iLow: 301, iHigh: 400 },
+    { cLow: 431, cHigh: 600, iLow: 401, iHigh: 500 },
+  ],
+  no2: [
+    { cLow: 0, cHigh: 40, iLow: 0, iHigh: 50 },
+    { cLow: 41, cHigh: 80, iLow: 51, iHigh: 100 },
+    { cLow: 81, cHigh: 180, iLow: 101, iHigh: 200 },
+    { cLow: 181, cHigh: 280, iLow: 201, iHigh: 300 },
+    { cLow: 281, cHigh: 400, iLow: 301, iHigh: 400 },
+    { cLow: 401, cHigh: 1000, iLow: 401, iHigh: 500 },
+  ],
+  so2: [
+    { cLow: 0, cHigh: 40, iLow: 0, iHigh: 50 },
+    { cLow: 41, cHigh: 80, iLow: 51, iHigh: 100 },
+    { cLow: 81, cHigh: 380, iLow: 101, iHigh: 200 },
+    { cLow: 381, cHigh: 800, iLow: 201, iHigh: 300 },
+    { cLow: 801, cHigh: 1600, iLow: 301, iHigh: 400 },
+    { cLow: 1601, cHigh: 2000, iLow: 401, iHigh: 500 },
+  ],
+  co: [
+    { cLow: 0, cHigh: 1, iLow: 0, iHigh: 50 },
+    { cLow: 1.1, cHigh: 2, iLow: 51, iHigh: 100 },
+    { cLow: 2.1, cHigh: 10, iLow: 101, iHigh: 200 },
+    { cLow: 10.1, cHigh: 17, iLow: 201, iHigh: 300 },
+    { cLow: 17.1, cHigh: 34, iLow: 301, iHigh: 400 },
+    { cLow: 34.1, cHigh: 50, iLow: 401, iHigh: 500 },
+  ],
+  o3: [
+    { cLow: 0, cHigh: 50, iLow: 0, iHigh: 50 },
+    { cLow: 51, cHigh: 100, iLow: 51, iHigh: 100 },
+    { cLow: 101, cHigh: 168, iLow: 101, iHigh: 200 },
+    { cLow: 169, cHigh: 208, iLow: 201, iHigh: 300 },
+    { cLow: 209, cHigh: 748, iLow: 301, iHigh: 400 },
+    { cLow: 749, cHigh: 1000, iLow: 401, iHigh: 500 },
+  ],
+};
 
-  const bp = breakpoints.find((b) => pm25 >= b.cLow && pm25 <= b.cHigh);
+/* ===========================
+   SUB-INDEX CALCULATION
+=========================== */
+
+function calculateSubIndex(value, pollutant) {
+  if (value == null || AQI_BREAKPOINTS[pollutant] == null) return null;
+
+  const breakpoints = AQI_BREAKPOINTS[pollutant];
+
+  const bp = breakpoints.find(
+    (b) => value >= b.cLow && value <= b.cHigh
+  );
 
   if (!bp) return null;
 
-  const aqi =
-    ((bp.iHigh - bp.iLow) / (bp.cHigh - bp.cLow)) * (pm25 - bp.cLow) + bp.iLow;
+  const subIndex =
+    ((bp.iHigh - bp.iLow) / (bp.cHigh - bp.cLow)) *
+      (value - bp.cLow) +
+    bp.iLow;
 
-  return Math.round(aqi);
+  return Math.round(subIndex);
 }
+
+/* ===========================
+   AQI CATEGORY
+=========================== */
 
 function getAQICategory(aqi) {
   if (aqi <= 50) return "Good";
@@ -35,53 +95,30 @@ function getAQICategory(aqi) {
   if (aqi <= 400) return "Very Poor";
   return "Severe";
 }
-router.get("/airQualityData",authMiddleware ,async (req, res) => {
+
+/* ===========================
+   ROUTE
+=========================== */
+
+router.get("/airQualityData", authMiddleware, async (req, res) => {
   try {
-    let location;
-    // fetch location , if present in db use it else fetch from ip address
-    if(req.query.city){
-      location = req.query.city;
-    }
-    else{
-    const userId = req.userId;
-    const user = await User.findById(userId);
-    location = user.location;
-    if (location === "" || location === undefined) {
-      const ipRes = await axios.get("https://ipapi.co/json/");
-      location = ipRes.data.city;
-    }
-  }
+    let location = req.query.city;
+
     if (!location) {
-      return res.status(400).json({
-        message: "Unable to determine city",
-      });
+      const user = await User.findById(req.userId);
+      location = user?.location;
+
+      if (!location) {
+        const ipRes = await axios.get("https://ipapi.co/json/");
+        location = ipRes.data.city;
+      }
     }
-    // location="Guntur";
-    // fetching real AQI value from waqi API (it returns answer for major cities only , it is measured by sensors)
-    let aqiValue = null;
-    let dominantPollutant = null;
-    let aqiSource = null;
 
-    let waqiResult = await axios.get(
-      `https://api.waqi.info/feed/${location}/`,
-      {
-        params: {
-          token: process.env.WAQI_KEY,
-        },
-      },
-    );
-
-    if (
-      waqiResult.data.status === "ok" &&
-      typeof waqiResult.data.data.aqi === "number"
-    ) {
-      aqiValue = waqiResult.data.data.aqi;
-      dominantPollutant = waqiResult.data.data.dominentpol;
-      aqiSource = "sensor_measured (from waqi)";
+    if (!location) {
+      return res.status(400).json({ message: "City not found" });
     }
-    // console.log(aqiValue, dominantPollutant, aqiSource);
 
-    // fetching pollutants from openWeatherMap API
+    // Convert city → lat, lon
     const geoRes = await axios.get(
       "https://api.openweathermap.org/geo/1.0/direct",
       {
@@ -90,84 +127,87 @@ router.get("/airQualityData",authMiddleware ,async (req, res) => {
           limit: 1,
           appid: process.env.OPENWEATHER_KEY,
         },
-      },
+      }
     );
 
-    if (!geoRes.data || geoRes.data.length === 0) {
-      return res.status(400).json({
-        message: "location not found in OpenWeather",
-      });
+    if (!geoRes.data.length) {
+      return res.status(400).json({ message: "Invalid city" });
     }
 
     const { lat, lon } = geoRes.data[0];
 
-    // 3B: Fetch pollutant concentrations
+    // Fetch pollution data
     const airRes = await axios.get(
       "https://api.openweathermap.org/data/2.5/air_pollution",
       {
-        params: {
-          lat,
-          lon,
-          appid: process.env.OPENWEATHER_KEY,
-        },
-      },
+        params: { lat, lon, appid: process.env.OPENWEATHER_KEY },
+      }
     );
 
     const components = airRes.data.list[0].components;
 
+    // Round + convert units
     const pollutants = {
-      pm2_5: components.pm2_5,
-      pm10: components.pm10,
-      no2: components.no2,
-      co: components.co,
-      o3: components.o3,
-      so2: components.so2,
+      pm2_5: Number(components.pm2_5?.toFixed(2)),
+      pm10: Number(components.pm10?.toFixed(2)),
+      no2: Number(components.no2?.toFixed(2)),
+      so2: Number(components.so2?.toFixed(2)),
+      co: Number((components.co / 1000)?.toFixed(2)), // µg → mg
+      o3: Number(components.o3?.toFixed(2)),
     };
 
-    // console.log(pollutants);
-    // ================================ only if waqi is fail =======================================
-    if (aqiValue === null) {
-      aqiValue = calculateIndiaAQI(pollutants.pm2_5);
-      dominantPollutant = "PM2.5";
-      aqiSource = "model_estimated (from formula)";
+    // Calculate sub-indices
+    const subIndices = {};
+    for (let key in pollutants) {
+      subIndices[key] = calculateSubIndex(pollutants[key], key);
     }
 
-    // =================================================================================================
+    // Filter valid sub-indices
+    const validSubIndices = Object.entries(subIndices).filter(
+      ([_, value]) => value != null
+    );
 
-    const aqiCategory = getAQICategory(aqiValue);
+    if (validSubIndices.length === 0) {
+      return res.status(500).json({ message: "AQI calculation failed" });
+    }
 
-    const responseObject = {
-      location: location,
+    // Final AQI = max sub-index
+    const finalAQI = Math.max(...validSubIndices.map(([_, val]) => val));
+
+    // Dominant pollutant
+    const dominantPollutant = validSubIndices.reduce((prev, curr) =>
+      curr[1] > prev[1] ? curr : prev
+    )[0];
+
+    const response = {
+      location,
       aqi: {
-        value: aqiValue,
-        category: aqiCategory,
-        source: aqiSource,
+        value: finalAQI,
+        category: getAQICategory(finalAQI),
+        source: "CPCB multi-pollutant formula",
       },
-      dominant_pollutant: dominantPollutant
-        ? dominantPollutant.toUpperCase()
-        : "PM2.5",
+      dominant_pollutant: dominantPollutant.toUpperCase(),
       pollutants: {
-        unit: "µg/m³",
-        values: {
-          pm2_5: pollutants.pm2_5,
-          pm10: pollutants.pm10,
-          no2: pollutants.no2,
-          co: pollutants.co,
-          o3: pollutants.o3,
-          so2: pollutants.so2,
+        unit: {
+          pm2_5: "µg/m³",
+          pm10: "µg/m³",
+          no2: "µg/m³",
+          so2: "µg/m³",
+          o3: "µg/m³",
+          co: "mg/m³",
         },
+        values: pollutants,
       },
-      pollutant_source: "model_estimated (openWeatherMap API)",
-      confidence: aqiSource === "sensor_measured" ? "high" : "medium",
-
+      sub_indices: subIndices,
+      confidence: "medium",
       last_updated: new Date().toISOString(),
     };
 
-    return res.json(responseObject);
-  } catch (error) {
+    return res.json(response);
+  } catch (err) {
     return res.status(500).json({
       status: "Error",
-      message: error.message,
+      message: err.message,
     });
   }
 });

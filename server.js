@@ -16,6 +16,9 @@ app.get("/",(req,res)=>{
 
 app.use("/api/auth",require("./routes/auth"));
 app.use("/api",require("./routes/aqiData"));
+app.use("/api",require("./routes/llm"));
+app.use("/api", require("./routes/weatherRoutes"));
+app.use("/api",require("./routes/trafficRoutes"));
 
 
 
