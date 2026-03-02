@@ -19,6 +19,8 @@ app.use("/api",require("./routes/aqiData"));
 app.use("/api",require("./routes/llm"));
 app.use("/api", require("./routes/weatherRoutes"));
 app.use("/api",require("./routes/trafficRoutes"));
+app.use("/api/cityFeed",require("./routes/cityFeedRoutes"));
+app.use("/uploads", express.static("uploads"));
 
 
 

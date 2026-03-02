@@ -72,7 +72,7 @@ router.post("/personalize", authMiddleware, async (req, res) => {
     const { location, ageRange, disease } = req.body;
 
     const user = await User.findById(req.userId);
-    user.location = location;
+    user.location = location?.trim().toLowerCase();
     user.ageRange = ageRange;
     user.disease = disease;
     user.isPersonalized = true;
