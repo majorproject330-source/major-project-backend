@@ -37,7 +37,29 @@ router.post("/register", async (req, res) => {
 router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
-    
+
+    /* ===========================
+       ADMIN LOGIN (Hardcoded)
+    ============================ */
+    if (
+      email === process.env.ADMIN_EMAIL &&
+      password === process.env.ADMIN_PASSWORD
+    ) {
+      const adminToken = jwt.sign(
+        { id: "admin", role: "admin" },
+        process.env.JWT_SECRET,
+        { expiresIn: "7d" }
+      );
+
+      return res.json({
+        token: adminToken,
+        isAdmin: true,
+      });
+    }
+
+    /* ===========================
+       NORMAL USER LOGIN
+    ============================ */
 
     const user = await User.findOne({ email });
     if (!user) {
@@ -50,20 +72,21 @@ router.post("/login", async (req, res) => {
     }
 
     const token = jwt.sign(
-      { id: user._id },
+      { id: user._id, role: "user" },   // 🔥 role added
       process.env.JWT_SECRET,
       { expiresIn: "7d" }
     );
 
     res.json({
       token,
+      isAdmin: false,
       isPersonalized: user.isPersonalized,
     });
+
   } catch (error) {
     res.status(500).json({ message: "Server error" });
   }
 });
-
 /**
  * SAVE PERSONALIZATION
  */
