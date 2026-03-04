@@ -3,7 +3,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 const authMiddleware = require("../middleware/authMiddleware");
-
+const passport = require("passport");
 const router = express.Router();
 
 /**
@@ -103,6 +103,46 @@ router.post("/personalize", authMiddleware, async (req, res) => {
     await user.save();
 
     res.json({ message: "Personalization saved" });
+  } catch (error) {
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+router.get(
+  "/google",
+  passport.authenticate("google", { scope: ["profile", "email"] })
+);
+router.get(
+  "/google/callback",
+  passport.authenticate("google", { session: false }),
+  async (req, res) => {
+    try {
+      const user = req.user;
+
+      const token = jwt.sign(
+        { id: user._id, role: "user" },
+        process.env.JWT_SECRET,
+        { expiresIn: "7d" }
+      );
+
+      // Redirect back to frontend
+      res.redirect(
+        `http://localhost:5173/oauth-success?token=${token}`
+      );
+
+    } catch (error) {
+      res.status(500).json({ message: "Google authentication failed" });
+    }
+  }
+);
+router.get("/me", authMiddleware, async (req, res) => {
+  try {
+    const user = await User.findById(req.userId);
+
+    res.json({
+      isPersonalized: user.isPersonalized,
+      email: user.email,
+    });
   } catch (error) {
     res.status(500).json({ message: "Server error" });
   }

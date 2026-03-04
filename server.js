@@ -6,6 +6,7 @@ const connectDB = require("./config/db.js");
 
 const app = express();
 connectDB()
+const passport = require("./config/passport");
 
 
 app.use(express.json());
@@ -23,7 +24,7 @@ app.use("/api/cityFeed",require("./routes/cityFeedRoutes"));
 app.use("/uploads", express.static("uploads"));
 app.use("/api/admin", require("./routes/adminRoutes"));
 
-
+app.use(passport.initialize());
 
 
 
