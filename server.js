@@ -23,7 +23,7 @@ app.use("/api",require("./routes/trafficRoutes"));
 app.use("/api/cityFeed",require("./routes/cityFeedRoutes"));
 app.use("/uploads", express.static("uploads"));
 app.use("/api/admin", require("./routes/adminRoutes"));
-
+app.use("/api/ai", require("./routes/chat"));
 app.use(passport.initialize());
 
 
